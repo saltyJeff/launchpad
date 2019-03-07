@@ -1,0 +1,3 @@
+BMP_altitude,BNO_w,BNO_x,BNO_y,BNO_z,MPU_accelX,MPU_accelY,MPU_accelZ,Pressure_cc,Pressure_fuel,Pressure_ox,Pressure_press,timestamp
+float,float,float,float,float,float,float,float,float,float,float,float,uint32_t
+BMP, BNO, MPU, Pressure, Radio, SdCard
