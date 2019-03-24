@@ -1,19 +1,13 @@
 package io.github.saltyJeff.launchpad.telem
 
-import com.digi.xbee.api.XBeeDevice
 import com.fazecast.jSerialComm.SerialPort
 import io.github.saltyJeff.launchpad.CField
-import io.github.saltyJeff.launchpad.TYPE_DICT
-import io.github.saltyJeff.launchpad.TelemApp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.lang.StringBuilder
-import java.nio.file.Files
-import java.nio.file.StandardOpenOption
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.LinkedBlockingQueue
 import kotlin.concurrent.thread
 import kotlin.math.min
 
@@ -42,18 +36,23 @@ object Telemetry {
         }
         else {
             val csvLines = params.settingsFile.readLines()
-            loadSettings(csvLines[0], csvLines[1], csvLines[2])
+            loadSettings(csvLines[0], csvLines[1], csvLines[2]) //i like to live DANGEROUS
         }
         if(!params.skipRadio) {
             logger.info("Initializing radio port")
-            radioOperator = RadioOperator(selectPort(params.radioSerial).systemPortName)
+            radioOperator = RadioOperator(
+                selectPort(params.radioSerial).systemPortName,
+                fields,
+                timestampIdx,
+                altitudeIdx)
         }
-        job = thread(start = true) {
+        job = thread(start = true) { //thread continually polls for newlines and dumps it out
             while(true) {
                 if(arduinoOut != null && arduinoOut!!.hasNextLine()) {
                     val nextLine = Telemetry.arduinoOut!!.nextLine()
-                    if(queueLines) {
+                    if(queueLines) { //boolean that the next few lines are "important"
                         logger.debug("appended $nextLine to the queue")
+                        //store so the other queue can use it
                         lineQueue.add(nextLine)
                     }
                     println(nextLine)
@@ -76,6 +75,12 @@ object Telemetry {
             }
         }
         logger.warn("Quitting")
+        if(arduinoSerial != null) {
+            sendCmd(OpCodes.SHUTDOWN)
+        }
+        runBlocking {
+            delay(1500)
+        }
         input.close()
         job.interrupt()
         arduinoSerial?.closePort()
@@ -85,7 +90,6 @@ object Telemetry {
     }
 
     private fun interpretCmd(cmdStr: String) {
-        //dump/plot is the only command that doesn't require an arduino serial port
         val cmd = cmdStr.toLowerCase()
         if(cmd == "help") {
             logger.info("Help Requested:")
@@ -101,6 +105,7 @@ object Telemetry {
             println("ping: sends a ping")
             return
         }
+        //help stuff
         if(!params.skipRadio) {
             if(cmd == "stream") {
                 radioOperator.tglStreamFrame()
@@ -122,20 +127,24 @@ object Telemetry {
                 radioOperator.printNetStatistics()
             }
         }
+        //the radio hasn't been set up and you're not using a radio command, so now pick a arduino code
         if(arduinoSerial == null || arduinoOut == null) {
             if(cmd != "begin") {
                 logger.error("All other commands require the Arduino port to be started, please enter \"begin\" if that is your intention")
                 return
             }
             logger.info("Preparing arduino serial port")
-            arduinoSerial = selectPort(params.arduinoSerial)
-            arduinoSerial!!.setComPortTimeouts(SerialPort.TIMEOUT_SCANNER, 0, 0)
-            arduinoSerial!!.baudRate = 115200
-            arduinoSerial!!.openPort()
-            while(!arduinoSerial!!.isOpen);
-            arduinoOut = Scanner(arduinoSerial!!.inputStream)
+            val arduinoSerial = selectPort(params.arduinoSerial)
+            arduinoSerial.setComPortTimeouts(SerialPort.TIMEOUT_SCANNER, 0, 0)
+            arduinoSerial.baudRate = 115200
+            arduinoSerial.openPort()
+            while(!arduinoSerial.isOpen); //hopefully this boi doesn't lock into oblivion
+            arduinoOut = Scanner(arduinoSerial.inputStream)
+            this.arduinoSerial = arduinoSerial
             sendCmd(OpCodes.PING) //clear any lingering lines before proceeding
         }
+        //giant if of DEATH (mayb create a bunch of private funs or something but whatever)
+        //then again most of these are single lines so whatevs
         if(cmd == "meta") {
             logger.info("Pulling meta data from the device")
             queueLines = true
@@ -183,10 +192,6 @@ object Telemetry {
             logger.info("Requested ping")
             sendCmd(OpCodes.PING)
         }
-        else if(cmd == "shutdown") {
-            logger.warn("Requesting shutdown")
-            sendCmd(OpCodes.SHUTDOWN)
-        }
         else if(cmd != "begin") {
             logger.error("Command $cmd is not understood, type 'help' for help")
         }
@@ -223,6 +228,7 @@ object Telemetry {
     }
     var timestampIdx = -1
     var altitudeIdx = -1
+
     private fun loadSettings(line1: String, line2: String, line3: String) {
         fields.clear()
         val nameSplit = line1.split(',')
@@ -241,7 +247,7 @@ object Telemetry {
             fields.add(CField(typeSplit[it], nameSplit[it]))
         }
         if(!params.skipRadio) {
-            radioOperator.fieldsChanged()
+            radioOperator.fieldsChanged(fields, timestampIdx, altitudeIdx)
         }
         logger.info("Meta info about the chip:\nField Names: $line1\nField Types: $line2\nModules: $line3")
         moduleList = moduleSplit

@@ -27,6 +27,12 @@ val utterances = listOf(
     "It's probably the hardware",
     "It's probably the software",
     "I'm not trying to jinx it, but it's probably going to rain at FAR",
-    "So, how many hours of sleep did you get last night",
+    "So, how many hours of sleep did you get last night?",
     "Join the elevator gang",
-    "Anyone wanna hook me up with a SpaceX Internship?")
+    "Anyone wanna hook me up with a SpaceX Internship?",
+    "It’s the old warmup and business routine",
+    "We know where you live Melvin",
+    "So how about that CS / EE project",
+    "Hello There. General Ken Oh Bee",
+    "Cal Lee Bees for dinner?",
+    "Anyone got Bee Tee Es tickets?")

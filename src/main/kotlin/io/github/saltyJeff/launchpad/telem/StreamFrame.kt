@@ -8,6 +8,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.awt.Dimension
+import java.awt.Font
+import java.awt.GridLayout
+import java.awt.Insets
 import java.awt.event.ActionEvent
 import java.awt.event.ActionListener
 import java.io.DataInputStream
@@ -22,14 +26,32 @@ import javax.swing.table.TableModel
 
 
 class StreamFrame(private val dataHolder: MutableList<String>): JFrame(), ActionListener {
-    private val table: JTable = JTable(1, Telemetry.fields.size)
-    private val tableModel: DefaultTableModel
     private val timer = Timer(32, this)
+    private val dataLabels = mutableListOf<JLabel>()
+    private val boldFont = Font("Header", Font.BOLD, 16)
+    private val dataFont = Font("Data", Font.PLAIN, 16)
     init {
-        tableModel = table.model as DefaultTableModel
-        tableModel.setColumnIdentifiers(Telemetry.fields.map { it.fieldName }.toTypedArray())
-        add(table)
         pack()
+        title = "Rocket Telemetry"
+        defaultCloseOperation = 0
+        isResizable = false
+    }
+
+    fun setFields(fields: List<CField>) {
+        contentPane.removeAll()
+        val layout = GridLayout(fields.size,2, 5, 10)
+        this.layout = layout
+        fields.forEach {
+            val fieldLabel = JLabel(" ${it.fieldName}")
+            fieldLabel.font = boldFont
+            add(fieldLabel)
+            val dataLabel = JLabel("undef", SwingConstants.RIGHT)
+            dataLabel.font = dataFont
+            dataLabels.add(dataLabel)
+            add(dataLabel)
+        }
+        pack()
+        size = Dimension(400, height)
     }
 
     override fun setVisible(b: Boolean) {
@@ -42,9 +64,8 @@ class StreamFrame(private val dataHolder: MutableList<String>): JFrame(), Action
         }
     }
     override fun actionPerformed(e: ActionEvent?) {
-        dataHolder.withIndex().forEach {
-            tableModel.setValueAt(it.value, 0, it.index)
+        dataLabels.withIndex().forEach {
+            it.value.text = "${dataHolder[it.index]} "
         }
-        tableModel.fireTableRowsUpdated(0, 0)
     }
 }

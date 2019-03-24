@@ -5,10 +5,11 @@ import com.sun.speech.freetts.VoiceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 
 object Kevin {
     private val voice: Voice
-    @Volatile private var voicesGoingOn = 0
+    private var voicesGoingOn = AtomicInteger(0)
     init {
         System.setProperty("freetts.voices", "com.sun.speech.freetts.en.us.cmu_us_kal.KevinVoiceDirectory")
         val voiceManager = VoiceManager.getInstance()
@@ -17,16 +18,17 @@ object Kevin {
         voice.allocate()
     }
     fun speak(text: String) {
-        voicesGoingOn++
+        voicesGoingOn.incrementAndGet()
         GlobalScope.launch (Dispatchers.IO){
             voice.speak(text)
-            voicesGoingOn--
+            voicesGoingOn.decrementAndGet()
         }
     }
     fun shutup() {
+        voicesGoingOn.set(0)
         voice.deallocate()
     }
     fun finishUp() {
-        while(voicesGoingOn != 0);
+        while(voicesGoingOn.get() != 0);
     }
 }

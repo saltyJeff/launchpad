@@ -1,7 +1,5 @@
-package io.github.saltyJeff.launchpad.telem
+package io.github.saltyJeff.launchpad
 
-import io.github.saltyJeff.launchpad.CField
-import io.github.saltyJeff.launchpad.TYPE_DICT
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.*
@@ -10,7 +8,7 @@ val startDelim = 0xFF.toUByte()
 val end1Delim = 0xA4.toUByte()
 val end2Delim = 0x55.toUByte()
 
-class StructParser(private val fieldList: List<CField>, private val dataHolder: MutableList<String>) {
+class MessageParser(val fieldList: List<CField>, private val dataHolder: MutableList<String>) {
     private var writeIdx = 0
     private val pkgSize: Int
     private val buffer: ByteArray
@@ -28,13 +26,17 @@ class StructParser(private val fieldList: List<CField>, private val dataHolder: 
     }
 
     //make functional for unit testing
-    fun parseBytes(data: ByteArray): Boolean {
+    fun parseBytes(data: ByteArray, callback: () -> Unit = {}): Boolean {
         var needUpdate = false
         for(b in data) {
             buffer[writeIdx] = b
+            //println("non-scan: "+buffer.joinToString())
             writeIdx++
             if(b.toUByte() == end2Delim) {
-                needUpdate = needUpdate || scanStructs()
+                if(scanStructs()) {
+                    needUpdate = true
+                    callback()
+                }
             }
         }
         return needUpdate
@@ -45,12 +47,12 @@ class StructParser(private val fieldList: List<CField>, private val dataHolder: 
             if(buffer[i].toUByte() == startDelim && buffer[i-1].toUByte() == startDelim) {
                 //jump head to new index
                 val bufStart = i + 1
-                i = bufStart + 1 + pkgSize
-                if(i < buffer.size &&
-                    buffer[i].toUByte() == end2Delim &&
-                    buffer[i-1].toUByte() == end1Delim) {
-
-                    val inputSlice = buffer.slice(bufStart..i-2).toByteArray()
+                val endEnd = bufStart + pkgSize + 1
+                if(endEnd < buffer.size &&
+                    buffer[endEnd].toUByte() == end2Delim &&
+                    buffer[endEnd - 1].toUByte() == end1Delim
+                ) {
+                    val inputSlice = buffer.slice(bufStart..endEnd-2).toByteArray()
                     val inputBuffer = ByteBuffer.wrap(inputSlice).order(ByteOrder.LITTLE_ENDIAN)
                     fieldList.withIndex().forEach {
                         val idx = it.index
@@ -68,10 +70,9 @@ class StructParser(private val fieldList: List<CField>, private val dataHolder: 
                             "double" -> dataHolder[idx] = inputBuffer.double.toString()
                         }
                     }
-
-                    val numCopy = buffer.size - i - 1
-                    val startGood = i + 1
-                    for(j in startGood.until(startGood + numCopy)) {
+                    val numCopy = buffer.size - endEnd - 1
+                    val startGood = endEnd + 1
+                    for(j in startGood.until(buffer.size)) {
                         buffer[j - startGood] = buffer[j]
                     }
                     for(k in numCopy.until(buffer.size)) {

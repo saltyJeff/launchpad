@@ -133,3 +133,6 @@ gradle-app.setting
 
 #custom stuff
 demo/
+rocket_data.csv
+rocket_data.bin
+config.csv
