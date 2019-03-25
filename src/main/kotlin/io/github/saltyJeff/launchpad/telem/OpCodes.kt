@@ -9,8 +9,8 @@ enum class OpCodes {
     CALIBRATE,
     RESET,
     BENCH,
-    PING,
-    SHUTDOWN;
+    SHUTDOWN,
+    PING;
 
     companion object {
         fun fromByte(b: UByte): OpCodes {

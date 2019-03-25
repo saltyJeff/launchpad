@@ -21,6 +21,7 @@ object Telemetry {
     lateinit var job: Thread
     @Volatile var arduinoOut: Scanner? = null
     lateinit var radioOperator: RadioOperator
+    var termMode = false
 
     val lineQueue = ConcurrentLinkedQueue<String>()
     @Volatile var queueLines = false
@@ -102,6 +103,7 @@ object Telemetry {
             println("calibrate: enters the arduino into calibration mode")
             println("reset: reboots the arduino")
             println("netstat: gets network statistics")
+            println("term: enters terminal mode")
             println("ping: sends a ping")
             return
         }
@@ -143,6 +145,16 @@ object Telemetry {
             this.arduinoSerial = arduinoSerial
             sendCmd(OpCodes.PING) //clear any lingering lines before proceeding
         }
+        if(termMode) {
+            if(cmdStr == "exitterm") {
+                logger.info("Exiting terminal mode")
+                termMode = false
+                return
+            }
+            val fullCmd = cmdStr+"\n"
+            arduinoSerial!!.writeBytes(fullCmd.toByteArray(), fullCmd.length.toLong())
+            return
+        }
         //giant if of DEATH (mayb create a bunch of private funs or something but whatever)
         //then again most of these are single lines so whatevs
         if(cmd == "meta") {
@@ -160,7 +172,6 @@ object Telemetry {
             queueLines = false
         }
         else if(cmd == "enable") {
-            println("The following is a list of modules. Enter a binary string with 1 meaning on and 0 meaning off")
             println(moduleList)
             print("Binary enable flags>")
             val cmdStr = input.nextLine()
@@ -172,7 +183,6 @@ object Telemetry {
             sendCmd(OpCodes.SET_MODULES_EN, cmd)
         }
         else if(cmd == "view") {
-            println("The following is a list of modules. A binary 1 in its position from left to right means it is enabled")
             println(moduleList)
             sendCmd(OpCodes.GET_MODULES_EN)
         }
@@ -186,11 +196,16 @@ object Telemetry {
         }
         else if(cmd == "bench") {
             logger.info("Requested benchmark")
+            println(moduleList)
             sendCmd(OpCodes.BENCH)
         }
         else if(cmd == "ping") {
             logger.info("Requested ping")
             sendCmd(OpCodes.PING)
+        }
+        else if(cmd == "term") {
+            logger.info("Entering terminal mode. Any commands will be instantly sent to the Arduino. Type exitterm to exit")
+            termMode = true
         }
         else if(cmd != "begin") {
             logger.error("Command $cmd is not understood, type 'help' for help")
@@ -200,7 +215,7 @@ object Telemetry {
     private fun sendCmd(op: OpCodes, vararg operands: UByte) {
         writeBuffer[0] = op.toByte().toByte()
         if(operands.size > 2) {
-            logger.error("Recieved an invalid command with more than 2 bytes for operands, ignoring")
+            logger.error("Received an invalid command with more than 2 bytes for operands, ignoring")
         }
         var i = 0
         while(i < min(2, operands.size)) {

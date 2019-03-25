@@ -14,7 +14,7 @@ import picocli.CommandLine
         ConvertApp::class,
         CommandLine.HelpCommand::class
     ],
-    version = ["UCLA Rocket Project", "2019.2", "Run launchpad help for a list of commands"]
+    version = ["UCLA Rocket Project", "2019.2.0", "Run launchpad help for a list of commands"]
 )
 class LaunchpadApp: Runnable {
     override fun run() {
