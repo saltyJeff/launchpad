@@ -21,8 +21,9 @@ class MessageParser(val fieldList: List<CField>, private val dataHolder: Mutable
         fieldList.forEach {
             pkgSize += TYPE_DICT[it.typeName]!!
         }
-        buffer = ByteArray((pkgSize + 4) * 2)
+        buffer = ByteArray((pkgSize + 4) * 3)
         this.pkgSize = pkgSize
+        println("Parse package: $pkgSize")
     }
 
     //make functional for unit testing
@@ -31,7 +32,7 @@ class MessageParser(val fieldList: List<CField>, private val dataHolder: Mutable
         for(b in data) {
             buffer[writeIdx] = b
             //println("non-scan: "+buffer.joinToString())
-            writeIdx++
+            writeIdx = (writeIdx + 1) % buffer.size //prevent AIOB
             if(b.toUByte() == end2Delim) {
                 if(scanStructs()) {
                     needUpdate = true

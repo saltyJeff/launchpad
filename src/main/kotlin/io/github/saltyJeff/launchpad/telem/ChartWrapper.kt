@@ -24,6 +24,10 @@ class ChartWrapper(private val variable: String, frames: Int = 150): JFrame("$va
         System.arraycopy(yArray, 1, yArray, 0, yArray.size - 1)
         xArray[xArray.lastIndex] = x
         yArray[yArray.lastIndex] = y
+        if(xArray[0].toLong() == 0L) {
+            xArray.fill(x)
+            yArray.fill(y)
+        }
         panel.chart.updateXYSeries(variable, xArray, yArray, null)
         panel.revalidate()
         panel.repaint()

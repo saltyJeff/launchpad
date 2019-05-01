@@ -1,13 +1,17 @@
 package io.github.saltyJeff.launchpad.telem
 
 import com.digi.xbee.api.XBeeDevice
+import com.digi.xbee.api.models.XBeeMessage
 import io.github.saltyJeff.launchpad.CField
 import io.github.saltyJeff.launchpad.MessageParser
 import org.slf4j.LoggerFactory
+import java.io.Closeable
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import javax.print.DocFlavor
 
-class RadioOperator(port: String, fields: List<CField>, tsIdx: Int, altIdx: Int) {
+class RadioOperator(port: String, fields: List<CField>): Closeable {
     private val device = XBeeDevice(port, 9600)
     private val dataHolder = mutableListOf<String>()
     private lateinit var parser: MessageParser
@@ -25,39 +29,52 @@ class RadioOperator(port: String, fields: List<CField>, tsIdx: Int, altIdx: Int)
     var streamFrame = StreamFrame(dataHolder)
 
     private var lastK = 0
+    private val writePath: Path
     init {
-        logger.info("Preparing radio serial port $port")
+        println("Opening")
+        device.open()
+        println(device.operatingMode.toString())
+        logger.warn("Opened serial port $port")
+        fieldsChanged(fields)
+        if(!Telemetry.params.outputFile.exists()) {
+            Telemetry.params.outputFile.createNewFile()
+        }
+        logger.warn("TS Index: $tsIdx, ALT Index: $altIdx")
+        writePath = Telemetry.params.outputFile.toPath()
+        device.addDataListener {onRadioData(it)}
+    }
+    fun onRadioData(msg: XBeeMessage) {
+        Files.write(writePath, msg.data, StandardOpenOption.APPEND)
+        parser.parseBytes(msg.data) {
+            val thisTime = dataHolder[tsIdx].toLong()
+            netStats.msgReceived(thisTime)
 
-        fieldsChanged(fields, tsIdx, altIdx)
-
-        logger.debug("TS Index: $tsIdx, ALT Index: $altIdx")
-        device.addDataListener {
-            Files.write(Telemetry.params.outputFile.toPath(), it.data, StandardOpenOption.APPEND)
-            if(parser.parseBytes(it.data)) {
-                val thisTime = dataHolder[tsIdx].toLong()
-                netStats.msgReceived(thisTime)
-
-                openPlots.entries.forEach {(i, frame) ->
-                    if(frame.closed) {
-                        openPlots.remove(i)
-                        return@forEach
-                    }
-                    frame.addData(thisTime / 1000.0, dataHolder[i].toDouble())
+            openPlots.entries.forEach {(i, frame) ->
+                if(frame.closed) {
+                    openPlots.remove(i)
+                    return@forEach
                 }
-                if(tsIdx >= 0) {
-                    val thisHeight = (dataHolder[altIdx].toDouble()  / 1000).toInt()
-                    if(thisHeight > lastK && lastK > 0) {
-                        lastK = thisHeight
-                        Kevin.speak("$thisHeight meters")
-                    }
+                frame.addData(thisTime / 1000.0, dataHolder[i].toDouble())
+            }
+            if(altIdx >= 0) {
+                val thisHeight = (dataHolder[altIdx].toDouble()  / 1000).toInt()
+                if(thisHeight > lastK && lastK > 0) {
+                    lastK = thisHeight
+                    Kevin.speak("$thisHeight meters")
                 }
             }
         }
     }
-    fun fieldsChanged(fields: List<CField>, tsIdx: Int, altIdx: Int) {
+    fun fieldsChanged(fields: List<CField>) {
         parser = MessageParser(fields, dataHolder)
-        this.tsIdx = tsIdx
-        this.altIdx = altIdx
+        fields.withIndex().forEach {
+            if(it.value.fieldName == "timestamp") {
+                tsIdx = it.index
+            }
+            else if(it.value.fieldName == "Bmp_altitude") {
+                altIdx = it.index
+            }
+        }
         streamFrame.setFields(fields)
     }
     fun tglStreamFrame() {
@@ -75,5 +92,8 @@ class RadioOperator(port: String, fields: List<CField>, tsIdx: Int, altIdx: Int)
         val wrapper = ChartWrapper(name)
         openPlots[idx] = wrapper
         wrapper.isVisible = true
+    }
+    override fun close() {
+        device.close()
     }
 }

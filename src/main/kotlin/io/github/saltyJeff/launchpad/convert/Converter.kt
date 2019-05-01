@@ -1,6 +1,7 @@
 package io.github.saltyJeff.launchpad.convert
 
 import io.github.saltyJeff.launchpad.MessageParser
+import io.github.saltyJeff.launchpad.csvJoin
 import io.github.saltyJeff.launchpad.telem.NetworkStatistics
 import java.io.*
 
@@ -19,9 +20,10 @@ object Converter {
             }
         }
         val netStats = NetworkStatistics()
+        output.println(config.fields.csvJoin { it.fieldName })
         while(reader.read(byteBuffer) == 512) {
             parser.parseBytes(byteBuffer) {
-                output.println(dataHolder.joinToString(separator=","))
+                output.println(dataHolder.joinToString())
                 netStats.msgReceived(dataHolder[tsIdx].toLong())
             }
         }

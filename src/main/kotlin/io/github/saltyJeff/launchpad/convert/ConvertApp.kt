@@ -21,7 +21,7 @@ class ConvertApp: Runnable {
     override fun run() {
         if(!verbose) {
             val root = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME) as Logger
-            root.level = Level.INFO
+            root.level = Level.WARN
         }
         Converter.beginConversion(this)
     }

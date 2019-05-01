@@ -20,7 +20,7 @@ object Telemetry {
     val input = Scanner(System.`in`)
     lateinit var job: Thread
     @Volatile var arduinoOut: Scanner? = null
-    lateinit var radioOperator: RadioOperator
+    var radioOperator: RadioOperator? = null
     var termMode = false
 
     val lineQueue = ConcurrentLinkedQueue<String>()
@@ -31,7 +31,8 @@ object Telemetry {
 
     fun beginTelem(params: TelemApp) {
         this.params = params
-        logger.info("Beginning telemetry")
+        logger.warn("Beginning telemetry")
+
         if(!params.settingsFile.exists()) {
             logger.warn("Settings file is empty")
         }
@@ -39,14 +40,17 @@ object Telemetry {
             val csvLines = params.settingsFile.readLines()
             loadSettings(csvLines[0], csvLines[1], csvLines[2]) //i like to live DANGEROUS
         }
+
         if(!params.skipRadio) {
             logger.info("Initializing radio port")
             radioOperator = RadioOperator(
                 selectPort(params.radioSerial).systemPortName,
-                fields,
-                timestampIdx,
-                altitudeIdx)
+                fields)
         }
+        if(params.arduinoSerial != "") {
+            beginSerial()
+        }
+
         job = thread(start = true) { //thread continually polls for newlines and dumps it out
             while(true) {
                 if(arduinoOut != null && arduinoOut!!.hasNextLine()) {
@@ -60,6 +64,7 @@ object Telemetry {
                 }
             }
         }
+        //begin repl
         while(true) {
             try {
                 val next = input.nextLine()
@@ -85,6 +90,7 @@ object Telemetry {
         input.close()
         job.interrupt()
         arduinoSerial?.closePort()
+        radioOperator?.close()
         Kevin.shutup()
         println("Goodbye")
         System.exit(0)
@@ -94,23 +100,14 @@ object Telemetry {
         val cmd = cmdStr.toLowerCase()
         if(cmd == "help") {
             logger.info("Help Requested:")
-            println("stream: Toggles the stream window")
-            println("plot: Plots a specific field over time")
-            println("begin: begins the serial communication to the arduino")
-            println("meta: updates the metadata file for this build")
-            println("enable: allows the user to turn off and on modules selectively")
-            println("view: view which modules are active")
-            println("calibrate: enters the arduino into calibration mode")
-            println("reset: reboots the arduino")
-            println("netstat: gets network statistics")
-            println("term: enters terminal mode")
-            println("ping: sends a ping")
+            dumpHelp()
             return
         }
         //help stuff
-        if(!params.skipRadio) {
+        if(!params.skipRadio && radioOperator != null) {
+            val radioOp = radioOperator!!
             if(cmd == "stream") {
-                radioOperator.tglStreamFrame()
+                radioOp.tglStreamFrame()
                 return
             }
             else if(cmd == "plot") {
@@ -121,29 +118,22 @@ object Telemetry {
                 print("Select a field>")
                 val idx = input.nextInt()
                 input.nextLine()
-                radioOperator.startPlotting(idx)
+                radioOp.startPlotting(idx)
                 return
             }
             else if(cmd == "netstat") {
                 logger.info("Requested netstat")
-                radioOperator.printNetStatistics()
+                radioOp.printNetStatistics()
+                return
             }
         }
-        //the radio hasn't been set up and you're not using a radio command, so now pick a arduino code
-        if(arduinoSerial == null || arduinoOut == null) {
+        //the radio hasn't been set up and you're not using a radio command, so now pick a arduino radio
+        if(radioNotInit()) {
             if(cmd != "begin") {
                 logger.error("All other commands require the Arduino port to be started, please enter \"begin\" if that is your intention")
                 return
             }
-            logger.info("Preparing arduino serial port")
-            val arduinoSerial = selectPort(params.arduinoSerial)
-            arduinoSerial.setComPortTimeouts(SerialPort.TIMEOUT_SCANNER, 0, 0)
-            arduinoSerial.baudRate = 115200
-            arduinoSerial.openPort()
-            while(!arduinoSerial.isOpen); //hopefully this boi doesn't lock into oblivion
-            arduinoOut = Scanner(arduinoSerial.inputStream)
-            this.arduinoSerial = arduinoSerial
-            sendCmd(OpCodes.PING) //clear any lingering lines before proceeding
+            beginSerial() //clear any lingering lines before proceeding
         }
         if(termMode) {
             if(cmdStr == "exitterm") {
@@ -187,8 +177,12 @@ object Telemetry {
             sendCmd(OpCodes.GET_MODULES_EN)
         }
         else if(cmd == "calibrate") {
-            logger.info("Entering callibration mode")
-            sendCmd(OpCodes.CALIBRATE)
+            println("Enter the index of the module to calibrate, or 8 to calibrate all of them")
+            print("Calibration index>")
+            val calibNum = input.nextInt()
+            input.nextLine()
+            sendCmd(OpCodes.CALIBRATE, calibNum.toUByte())
+            enterTerm()
         }
         else if(cmd == "reset") {
             logger.info("Restarting machine")
@@ -204,12 +198,42 @@ object Telemetry {
             sendCmd(OpCodes.PING)
         }
         else if(cmd == "term") {
-            logger.info("Entering terminal mode. Any commands will be instantly sent to the Arduino. Type exitterm to exit")
-            termMode = true
+            enterTerm()
         }
         else if(cmd != "begin") {
             logger.error("Command $cmd is not understood, type 'help' for help")
         }
+    }
+    fun radioNotInit(): Boolean {
+        return arduinoSerial == null || arduinoOut == null
+    }
+    fun beginSerial() {
+        logger.info("Preparing arduino serial port")
+        val arduinoSerial = selectPort(params.arduinoSerial)
+        arduinoSerial.setComPortTimeouts(SerialPort.TIMEOUT_SCANNER, 0, 0)
+        arduinoSerial.baudRate = 115200
+        arduinoSerial.openPort()
+        while(!arduinoSerial.isOpen); //hopefully this boi doesn't lock into oblivion
+        arduinoOut = Scanner(arduinoSerial.inputStream)
+        this.arduinoSerial = arduinoSerial
+        sendCmd(OpCodes.PING)
+    }
+    fun dumpHelp() {
+        println("stream: Toggles the stream window")
+        println("plot: Plots a specific field over time")
+        println("begin: begins the serial communication to the arduino")
+        println("meta: updates the metadata file for this build")
+        println("enable: allows the user to turn off and on modules selectively")
+        println("view: view which modules are active")
+        println("calibrate: enters the arduino into calibration mode")
+        println("reset: reboots the arduino")
+        println("netstat: gets network statistics")
+        println("term: enters terminal mode")
+        println("ping: sends a ping")
+    }
+    fun enterTerm() {
+        logger.info("Entering terminal mode. Any commands will be instantly sent to the Arduino. Type exitterm to exit")
+        termMode = true
     }
     private val writeBuffer = ByteArray(3)
     private fun sendCmd(op: OpCodes, vararg operands: UByte) {
@@ -261,9 +285,7 @@ object Telemetry {
             }
             fields.add(CField(typeSplit[it], nameSplit[it]))
         }
-        if(!params.skipRadio) {
-            radioOperator.fieldsChanged(fields, timestampIdx, altitudeIdx)
-        }
+        radioOperator?.fieldsChanged(fields)
         logger.info("Meta info about the chip:\nField Names: $line1\nField Types: $line2\nModules: $line3")
         moduleList = moduleSplit
     }
