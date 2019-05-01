@@ -1,11 +1,10 @@
 package io.github.saltyJeff.launchpad.telem
 
 import com.fazecast.jSerialComm.SerialPort
-import io.github.saltyJeff.launchpad.CField
+import io.github.saltyJeff.launchpad.ConfigData
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
-import java.lang.StringBuilder
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.concurrent.thread
@@ -13,8 +12,7 @@ import kotlin.math.min
 
 object Telemetry {
     val logger = LoggerFactory.getLogger("Telemetry manager")
-    val fields: MutableList<CField> = mutableListOf()
-    var moduleList = listOf<String>()
+    lateinit var config: ConfigData
     lateinit var params: TelemApp
     var arduinoSerial: SerialPort? = null
     val input = Scanner(System.`in`)
@@ -37,15 +35,13 @@ object Telemetry {
             logger.warn("Settings file is empty")
         }
         else {
-            val csvLines = params.settingsFile.readLines()
-            loadSettings(csvLines[0], csvLines[1], csvLines[2]) //i like to live DANGEROUS
+            config = ConfigData(params.settingsFile)
         }
 
         if(!params.skipRadio) {
             logger.info("Initializing radio port")
             radioOperator = RadioOperator(
-                selectPort(params.radioSerial).systemPortName,
-                fields)
+                selectPort(params.radioSerial).systemPortName)
         }
         if(params.arduinoSerial != "") {
             beginSerial()
@@ -54,7 +50,7 @@ object Telemetry {
         job = thread(start = true) { //thread continually polls for newlines and dumps it out
             while(true) {
                 if(arduinoOut != null && arduinoOut!!.hasNextLine()) {
-                    val nextLine = Telemetry.arduinoOut!!.nextLine()
+                    val nextLine = arduinoOut!!.nextLine()
                     if(queueLines) { //boolean that the next few lines are "important"
                         logger.debug("appended $nextLine to the queue")
                         //store so the other queue can use it
@@ -112,7 +108,7 @@ object Telemetry {
             }
             else if(cmd == "plot") {
                 println("Select a field to plot")
-                fields.withIndex().forEach {
+                config.fields.withIndex().forEach {
                     println("${it.index}\t${it.value.fieldName}")
                 }
                 print("Select a field>")
@@ -157,12 +153,12 @@ object Telemetry {
 
             //block until we get our 3 lines
             while(lineQueue.size < 3);
-            loadSettings(lineQueue.poll(), lineQueue.poll(), lineQueue.poll())
-            writeSettings()
+            config.updateConfig(lineQueue.poll(), lineQueue.poll(), lineQueue.poll())
+            config.writeToFile(params.settingsFile)
             queueLines = false
         }
         else if(cmd == "enable") {
-            println(moduleList)
+            println(config.modules)
             print("Binary enable flags>")
             val cmdStr = input.nextLine()
                 .take(8)
@@ -173,7 +169,7 @@ object Telemetry {
             sendCmd(OpCodes.SET_MODULES_EN, cmd)
         }
         else if(cmd == "view") {
-            println(moduleList)
+            println(config.modules)
             sendCmd(OpCodes.GET_MODULES_EN)
         }
         else if(cmd == "calibrate") {
@@ -190,7 +186,7 @@ object Telemetry {
         }
         else if(cmd == "bench") {
             logger.info("Requested benchmark")
-            println(moduleList)
+            println(config.modules)
             sendCmd(OpCodes.BENCH)
         }
         else if(cmd == "ping") {
@@ -264,43 +260,5 @@ object Telemetry {
         else {
             return SerialPort.getCommPort(desc)
         }
-    }
-    var timestampIdx = -1
-    var altitudeIdx = -1
-
-    private fun loadSettings(line1: String, line2: String, line3: String) {
-        fields.clear()
-        val nameSplit = line1.split(',')
-        val typeSplit = line2.split(',')
-        val moduleSplit = line3.split(',')
-        if(nameSplit.size != typeSplit.size) {
-            throw Exception("CSV lines have different token counts")
-        }
-        nameSplit.indices.forEach {
-            if(nameSplit[it] == "timestamp") {
-                timestampIdx = it
-            }
-            if(nameSplit[it].contains("altitude")) {
-                altitudeIdx = it
-            }
-            fields.add(CField(typeSplit[it], nameSplit[it]))
-        }
-        radioOperator?.fieldsChanged(fields)
-        logger.info("Meta info about the chip:\nField Names: $line1\nField Types: $line2\nModules: $line3")
-        moduleList = moduleSplit
-    }
-    private fun writeSettings() {
-        logger.warn("Writing configuration file")
-        val nameBuilder = StringBuilder()
-        val typeBuilder = StringBuilder()
-        fields.forEach {
-            nameBuilder.append("${it.fieldName},")
-            typeBuilder.append("${it.typeName},")
-        }
-        //remove trailing comma
-        val nameCsv = nameBuilder.toString().dropLast(1)
-        val typeCsv = typeBuilder.toString().dropLast(1)
-        params.settingsFile.setWritable(true)
-        params.settingsFile.writeText("$nameCsv\n$typeCsv\n${moduleList.joinToString()}")
     }
 }

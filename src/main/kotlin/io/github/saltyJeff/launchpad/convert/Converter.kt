@@ -1,5 +1,6 @@
 package io.github.saltyJeff.launchpad.convert
 
+import io.github.saltyJeff.launchpad.ConfigData
 import io.github.saltyJeff.launchpad.MessageParser
 import io.github.saltyJeff.launchpad.csvJoin
 import io.github.saltyJeff.launchpad.telem.NetworkStatistics

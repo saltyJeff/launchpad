@@ -57,8 +57,7 @@ class MessageParser(val fieldList: List<CField>, private val dataHolder: Mutable
                     val inputBuffer = ByteBuffer.wrap(inputSlice).order(ByteOrder.LITTLE_ENDIAN)
                     fieldList.withIndex().forEach {
                         val idx = it.index
-                        val typeName = it.value.typeName
-                        when(typeName) {
+                        when(it.value.typeName) {
                             "int8_t" ->  dataHolder[idx] = inputBuffer.get().toString()
                             "uint8_t" -> dataHolder[idx] = inputBuffer.get().toUByte().toString()
                             "int16_t" -> dataHolder[idx] = inputBuffer.short.toString()
@@ -72,10 +71,12 @@ class MessageParser(val fieldList: List<CField>, private val dataHolder: Mutable
                         }
                     }
                     val numCopy = buffer.size - endEnd - 1
-                    val startGood = endEnd + 1
+                    val startGood = endEnd + 1 //starting index of data that hasn't been processed
+                    //copy all new data backwards
                     for(j in startGood.until(buffer.size)) {
                         buffer[j - startGood] = buffer[j]
                     }
+                    //null the rest of the array
                     for(k in numCopy.until(buffer.size)) {
                         buffer[k] = 0
                     }

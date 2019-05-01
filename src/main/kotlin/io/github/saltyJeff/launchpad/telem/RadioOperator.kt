@@ -9,9 +9,8 @@ import java.io.Closeable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
-import javax.print.DocFlavor
 
-class RadioOperator(port: String, fields: List<CField>): Closeable {
+class RadioOperator(port: String): Closeable {
     private val device = XBeeDevice(port, 9600)
     private val dataHolder = mutableListOf<String>()
     private lateinit var parser: MessageParser
@@ -19,10 +18,6 @@ class RadioOperator(port: String, fields: List<CField>): Closeable {
 
     //network statistics
     private val netStats = NetworkStatistics()
-
-    //indicies of note
-    private var tsIdx: Int = -1
-    private var altIdx: Int = -1
 
     //gui holders
     private val openPlots = mutableMapOf<Int, ChartWrapper>()
@@ -35,18 +30,17 @@ class RadioOperator(port: String, fields: List<CField>): Closeable {
         device.open()
         println(device.operatingMode.toString())
         logger.warn("Opened serial port $port")
-        fieldsChanged(fields)
         if(!Telemetry.params.outputFile.exists()) {
             Telemetry.params.outputFile.createNewFile()
         }
-        logger.warn("TS Index: $tsIdx, ALT Index: $altIdx")
+        logger.warn("Timestamp index: ${Telemetry.config.tsIdx}, Altitude index: ${Telemetry.config.altIdx}")
         writePath = Telemetry.params.outputFile.toPath()
         device.addDataListener {onRadioData(it)}
     }
     fun onRadioData(msg: XBeeMessage) {
         Files.write(writePath, msg.data, StandardOpenOption.APPEND)
         parser.parseBytes(msg.data) {
-            val thisTime = dataHolder[tsIdx].toLong()
+            val thisTime = dataHolder[Telemetry.config.altIdx].toLong()
             netStats.msgReceived(thisTime)
 
             openPlots.entries.forEach {(i, frame) ->
@@ -56,26 +50,14 @@ class RadioOperator(port: String, fields: List<CField>): Closeable {
                 }
                 frame.addData(thisTime / 1000.0, dataHolder[i].toDouble())
             }
-            if(altIdx >= 0) {
-                val thisHeight = (dataHolder[altIdx].toDouble()  / 1000).toInt()
+            if(Telemetry.config.hasAltimeter()) {
+                val thisHeight = (dataHolder[Telemetry.config.altIdx].toDouble()  / 1000).toInt()
                 if(thisHeight > lastK && lastK > 0) {
                     lastK = thisHeight
                     Kevin.speak("$thisHeight meters")
                 }
             }
         }
-    }
-    fun fieldsChanged(fields: List<CField>) {
-        parser = MessageParser(fields, dataHolder)
-        fields.withIndex().forEach {
-            if(it.value.fieldName == "timestamp") {
-                tsIdx = it.index
-            }
-            else if(it.value.fieldName == "Bmp_altitude") {
-                altIdx = it.index
-            }
-        }
-        streamFrame.setFields(fields)
     }
     fun tglStreamFrame() {
         streamFrame.isVisible = !streamFrame.isVisible
